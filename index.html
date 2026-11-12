@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Venus Flight</title>
+<style>
+  :root { --fg: #ffd9a8; --dim: #b98a5a; --bg: rgba(20, 10, 4, 0.55); --warn: #ff5a3c; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #1a0d05; color: var(--fg);
+    font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  canvas { display: block; }
+  .panel { position: fixed; background: var(--bg); padding: 8px 10px; border-radius: 4px;
+    backdrop-filter: blur(3px); pointer-events: none; }
+  #hud { top: 12px; left: 12px; min-width: 230px; }
+  #hud .row { display: flex; justify-content: space-between; gap: 16px; }
+  #hud .k { color: var(--dim); }
+  #place { margin-top: 6px; color: #fff0d8; }
+  #warn { position: fixed; top: 38%; width: 100%; text-align: center; font-size: 28px; font-weight: bold;
+    color: var(--warn); letter-spacing: 4px; display: none; text-shadow: 0 0 8px #000; }
+  #help { bottom: 12px; left: 12px; white-space: pre; color: var(--dim); }
+  #help b { color: var(--fg); font-weight: normal; }
+  #map { right: 12px; bottom: 12px; padding: 4px; pointer-events: auto; cursor: crosshair; }
+  #map img { display: block; width: 360px; height: 180px; filter: sepia(0.8) saturate(1.6) brightness(0.9); }
+  #map svg { position: absolute; left: 4px; top: 4px; width: 360px; height: 180px; pointer-events: none; }
+  #map .cap { color: var(--dim); padding-top: 3px; }
+  #places { top: 12px; right: 12px; pointer-events: auto; }
+  select { background: #2a1608; color: var(--fg); border: 1px solid #5a3a1e; font: inherit; padding: 2px 4px; }
+  #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 14px; background: #1a0d05; }
+  @media (max-width: 700px) { #map, #help { display: none; } }
+</style>
+<script type="importmap">
+  { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }
+</script>
+</head>
+<body>
+<div id="loading">Loading Magellan data…</div>
+<div id="hud" class="panel">
+  <div class="row"><span class="k">LAT / LON</span><span id="pos">–</span></div>
+  <div class="row"><span class="k">HEADING</span><span id="hdg">–</span></div>
+  <div class="row"><span class="k">ALT (datum)</span><span id="alt">–</span></div>
+  <div class="row"><span class="k">ALT (ground)</span><span id="agl">–</span></div>
+  <div class="row"><span class="k">TERRAIN ELEV</span><span id="elev">–</span></div>
+  <div class="row"><span class="k">SPEED</span><span id="spd">–</span></div>
+  <div class="row"><span class="k">VERT EXAG</span><span id="exag">–</span></div>
+  <div id="place"></div>
+</div>
+<div id="places" class="panel">
+  <select id="goto"><option value="">Fly to…</option></select>
+</div>
+<div id="warn">TERRAIN</div>
+<div id="help" class="panel"><b>W/S ↑↓</b> pitch   <b>A/D ←→</b> roll   <b>Q/E</b> yaw
+<b>Shift/Ctrl</b> or <b>wheel</b> throttle   <b>[ ]</b> vertical exaggeration
+<b>T</b> detail texture   <b>I</b> invert pitch   <b>P</b> pause   <b>H</b> hide help
+Click the map to teleport</div>
+<div id="map" class="panel">
+  <img id="mapimg" alt="Magellan radar map">
+  <svg viewBox="0 0 360 180"><g id="marker"><circle r="3" fill="#ff5a3c"/><line id="hdgline" x1="0" y1="0" x2="0" y2="-10" stroke="#ff5a3c" stroke-width="1.5"/></g></svg>
+  <div class="cap">Magellan SAR mosaic · NASA/JPL/USGS</div>
+</div>
+<script type="module" src="main.js"></script>
+</body>
+</html>
