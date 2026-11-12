@@ -2,6 +2,10 @@
 
 **Fly it: https://nibalizer.github.io/venus-flightsim/**
 
+In 1989, the Magellan spacecraft took radar readings of the surface of Venus. Since this data is public it was easy to build a flight sim around it.
+
+Very few pictures of the venutian surface exist because the conditions are so intense that the probes landed there fail in minutes or hours. Here are some of the [pictures](https://www.planetary.org/articles/every-picture-from-venus-surface-ever).
+
 A minimal browser flight sim over real Venus, built from NASA Magellan data:
 
 - **Terrain**: Magellan global topography (GTDR, 4.6 km/px), resampled to 4096×2048
