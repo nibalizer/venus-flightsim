@@ -2,13 +2,17 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="description" content="Fly over the real surface of Venus, mapped by NASA's Magellan radar.">
 <title>Venus Flight</title>
 <style>
-  :root { --fg: #ffd9a8; --dim: #b98a5a; --bg: rgba(20, 10, 4, 0.55); --warn: #ff5a3c; }
+  :root { --fg: #ffd9a8; --dim: #b98a5a; --bg: rgba(20, 10, 4, 0.55); --warn: #ff5a3c; --accent: #ff9a3c; }
   html, body { margin: 0; height: 100%; overflow: hidden; background: #1a0d05; color: var(--fg);
-    font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-  canvas { display: block; }
+    font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+  canvas { display: block; touch-action: none; cursor: grab; }
+  canvas:active { cursor: grabbing; }
+  a { color: var(--accent); }
   .panel { position: fixed; background: var(--bg); padding: 8px 10px; border-radius: 4px;
     backdrop-filter: blur(3px); pointer-events: none; }
   #hud { top: 12px; left: 12px; min-width: 230px; }
@@ -16,18 +20,69 @@
   #hud .k { color: var(--dim); }
   #place { margin-top: 6px; color: #fff0d8; }
   #warn { position: fixed; top: 38%; width: 100%; text-align: center; font-size: 28px; font-weight: bold;
-    color: var(--warn); letter-spacing: 4px; display: none; text-shadow: 0 0 8px #000; }
+    color: var(--warn); letter-spacing: 4px; display: none; text-shadow: 0 0 8px #000; pointer-events: none; }
   #help { bottom: 12px; left: 12px; white-space: pre; color: var(--dim); }
   #help b { color: var(--fg); font-weight: normal; }
   #map { right: 12px; bottom: 12px; padding: 4px; pointer-events: auto; cursor: crosshair; }
   #map img { display: block; width: 360px; height: 180px; filter: sepia(0.8) saturate(1.6) brightness(0.9); }
   #map svg { position: absolute; left: 4px; top: 4px; width: 360px; height: 180px; pointer-events: none; }
   #map .cap { color: var(--dim); padding-top: 3px; }
-  #places { top: 12px; right: 12px; pointer-events: auto; }
-  select { background: #2a1608; color: var(--fg); border: 1px solid #5a3a1e; font: inherit; padding: 2px 4px; }
+  #topright { top: 12px; right: 12px; pointer-events: auto; display: flex; gap: 6px; }
+  select, button { background: #2a1608; color: var(--fg); border: 1px solid #5a3a1e; font: inherit;
+    padding: 3px 8px; border-radius: 3px; }
+  button { cursor: pointer; }
+  button.on { background: #5a3a1e; }
+  #invbtn, #exagbtn { display: none; }
+
+  /* Virtual stick (mouse drag or left thumb). */
+  #stick { position: fixed; display: none; transform: translate(-50%, -50%); border-radius: 50%;
+    border: 2px solid rgba(255, 217, 168, 0.45); background: rgba(20, 10, 4, 0.25); pointer-events: none; }
+  #knob { position: absolute; left: 50%; top: 50%; width: 36px; height: 36px; border-radius: 50%;
+    background: rgba(255, 154, 60, 0.75); transform: translate(-50%, -50%); }
+
+  /* Touch throttle (right thumb). */
+  #throttle { display: none; right: 14px; bottom: 24px; width: 40px; height: 34vh; padding: 0;
+    flex-direction: column; justify-content: flex-end; overflow: hidden; }
+  #thrfill { background: rgba(255, 154, 60, 0.55); width: 100%; }
+  #thrlabel { position: absolute; top: 4px; width: 100%; text-align: center; font-size: 10px; }
+  .hint { display: none; position: fixed; bottom: 6px; width: 100%; text-align: center; color: var(--dim);
+    font-size: 11px; pointer-events: none; }
+
+  /* About */
+  #about { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(10, 5, 2, 0.6); padding: 16px; z-index: 10; }
+  #about[hidden] { display: none; }
+  #about .card { background: rgba(30, 15, 6, 0.94); border: 1px solid #5a3a1e; border-radius: 6px;
+    max-width: 560px; max-height: calc(100vh - 32px); overflow-y: auto; padding: 20px 22px;
+    font: 14px/1.55 system-ui, sans-serif; -webkit-user-select: text; user-select: text; }
+  #about h1 { font-size: 22px; margin: 0 0 8px; color: #fff0d8; }
+  #about p { margin: 0 0 10px; }
+  #about .dim { color: var(--dim); font-size: 12.5px; }
+  #about ul { margin: 0 0 12px; padding-left: 18px; }
+  #about .ctl-touch { display: none; }
+  #fly { font: 15px system-ui, sans-serif; padding: 8px 22px; background: var(--accent); color: #1a0d05;
+    border: none; font-weight: 600; margin-top: 4px; }
+
   #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
-    font-size: 14px; background: #1a0d05; }
-  @media (max-width: 700px) { #map, #help { display: none; } }
+    font-size: 14px; background: #1a0d05; z-index: 20; }
+
+  /* Phones and other touch screens. */
+  body.touch #help, body.touch #map { display: none; }
+  body.touch #throttle { display: flex; }
+  body.touch #invbtn, body.touch #exagbtn { display: inline-block; }
+  body.touch .hint { display: block; }
+  body.touch #about .ctl-desk { display: none; }
+  body.touch #about .ctl-touch { display: block; }
+  .ctl-touch-i, body.touch .ctl-desk-i { display: none; }
+  body.touch .ctl-touch-i { display: inline; }
+  @media (max-width: 700px) {
+    #help, #map { display: none; }
+    #hud { top: 8px; left: 8px; min-width: 0; max-width: calc(100vw - 150px); font-size: 10.5px; padding: 6px 8px; }
+    #hud .row { gap: 10px; }
+    #hud .opt { display: none; }
+    #topright { top: 8px; right: 8px; flex-direction: column; align-items: flex-end; background: none; padding: 0; }
+    #goto { max-width: 126px; }
+  }
 </style>
 <script type="importmap">
   { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }
@@ -38,25 +93,69 @@
 <div id="hud" class="panel">
   <div class="row"><span class="k">LAT / LON</span><span id="pos">–</span></div>
   <div class="row"><span class="k">HEADING</span><span id="hdg">–</span></div>
-  <div class="row"><span class="k">ALT (datum)</span><span id="alt">–</span></div>
+  <div class="row opt"><span class="k">ALT (datum)</span><span id="alt">–</span></div>
   <div class="row"><span class="k">ALT (ground)</span><span id="agl">–</span></div>
-  <div class="row"><span class="k">TERRAIN ELEV</span><span id="elev">–</span></div>
+  <div class="row opt"><span class="k">TERRAIN ELEV</span><span id="elev">–</span></div>
   <div class="row"><span class="k">SPEED</span><span id="spd">–</span></div>
   <div class="row"><span class="k">VERT EXAG</span><span id="exag">–</span></div>
   <div id="place"></div>
 </div>
-<div id="places" class="panel">
+<div id="topright" class="panel">
   <select id="goto"><option value="">Fly to…</option></select>
+  <button id="invbtn" title="Invert pitch">⇅ invert</button>
+  <button id="exagbtn" title="Vertical exaggeration">×3</button>
+  <button id="aboutbtn" title="About">?</button>
 </div>
 <div id="warn">TERRAIN</div>
-<div id="help" class="panel"><b>W/S ↑↓</b> pitch   <b>A/D ←→</b> roll   <b>Q/E</b> yaw
-<b>Shift/Ctrl</b> or <b>wheel</b> throttle   <b>[ ]</b> vertical exaggeration
-<b>T</b> detail texture   <b>I</b> invert pitch   <b>P</b> pause   <b>H</b> hide help
+<div id="help" class="panel"><b>Drag mouse</b> to steer   <b>wheel</b> throttle   <b>Esc</b> about
+<b>W/S ↑↓</b> pitch   <b>A/D ←→</b> roll   <b>Q/E</b> yaw   <b>Shift/Ctrl</b> throttle
+<b>[ ]</b> vertical exaggeration   <b>T</b> detail   <b>I</b> invert   <b>P</b> pause   <b>H</b> hide
 Click the map to teleport</div>
 <div id="map" class="panel">
   <img id="mapimg" alt="Magellan radar map">
-  <svg viewBox="0 0 360 180"><g id="marker"><circle r="3" fill="#ff5a3c"/><line id="hdgline" x1="0" y1="0" x2="0" y2="-10" stroke="#ff5a3c" stroke-width="1.5"/></g></svg>
+  <svg viewBox="0 0 360 180"><g id="marker"><circle r="3" fill="#ff5a3c"/><line x1="0" y1="0" x2="0" y2="-10" stroke="#ff5a3c" stroke-width="1.5"/></g></svg>
   <div class="cap">Magellan SAR mosaic · NASA/JPL/USGS</div>
+</div>
+<div id="throttle" class="panel"><div id="thrlabel"></div><div id="thrfill"></div></div>
+<div class="hint">left thumb: steer · right thumb ↕: throttle</div>
+<div id="stick"><div id="knob"></div></div>
+
+<div id="about">
+  <div class="card">
+    <h1>You're flying over Venus</h1>
+    <p>Thick clouds hide Venus's surface from ordinary cameras. NASA's
+      <a href="https://science.nasa.gov/mission/magellan/" target="_blank" rel="noopener">Magellan</a>
+      spacecraft mapped it from orbit with radar between 1990 and 1994, covering about 98% of the planet.</p>
+    <p>Everything here is that real data. The ground's brightness is Magellan's radar image of the surface, and
+      the hills are its altimeter measurements. You can visit the volcanoes, highland plateaus, impact craters and
+      lava channels of <a href="https://en.wikipedia.org/wiki/Venus" target="_blank" rel="noopener">Earth's twin</a>,
+      at their real locations and full planetary scale.</p>
+    <p class="dim">Heights are exaggerated ×3 by default because Venus is surprisingly flat. Change it with
+      <span class="ctl-desk-i">the [ and ] keys</span><span class="ctl-touch-i">the ×3 button</span>. The HUD always shows real altitudes. The radar is ~2 km per pixel, so the view is best from 30–300 km up.
+      The orange haze is artistic: the real surface sits under a crushing CO₂ atmosphere at 465 °C.</p>
+    <div class="ctl-desk">
+      <ul>
+        <li><b>Drag the mouse</b> to steer (down = climb), <b>scroll</b> for throttle</li>
+        <li>Or keys: W/S pitch, A/D roll, Q/E yaw, Shift/Ctrl throttle</li>
+        <li>Pick a destination from <b>Fly to…</b> or click the minimap</li>
+      </ul>
+    </div>
+    <div class="ctl-touch">
+      <ul>
+        <li><b>Left thumb</b>: drag to steer (down = climb)</li>
+        <li><b>Right thumb</b>: drag up/down for throttle</li>
+        <li>Pick a destination from <b>Fly to…</b></li>
+      </ul>
+    </div>
+    <p class="dim">Learn more:
+      <a href="https://en.wikipedia.org/wiki/Magellan_(spacecraft)" target="_blank" rel="noopener">Magellan on Wikipedia</a> ·
+      <a href="https://en.wikipedia.org/wiki/Geology_of_Venus" target="_blank" rel="noopener">Geology of Venus</a> ·
+      data from USGS Astrogeology
+      (<a href="https://astrogeology.usgs.gov/search/map/venus_magellan_global_c3_mdir_mosaic_2025m" target="_blank" rel="noopener">radar</a>,
+      <a href="https://astrogeology.usgs.gov/search/map/venus_magellan_global_topography_4641m" target="_blank" rel="noopener">topography</a>) ·
+      source on <a href="https://github.com/nibalizer/venus-flightsim" target="_blank" rel="noopener">GitHub</a></p>
+    <button id="fly">Start flying</button>
+  </div>
 </div>
 <script type="module" src="main.js"></script>
 </body>

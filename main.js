@@ -108,7 +108,9 @@ function makeSampler({ W, H, data }) {
 // onto the sphere, samples the DEM, and outputs a camera-relative position computed
 // without large-number cancellation, so float32 stays precise from 10 m to 5000 km up.
 
-const RINGS = 320, SEGMENTS = 512;
+// Phones get a lighter terrain mesh.
+const COARSE = matchMedia('(pointer: coarse)').matches;
+const RINGS = COARSE ? 200 : 320, SEGMENTS = COARSE ? 320 : 512;
 
 function gridGeometry() {
   const pos = new Float32Array((RINGS + 1) * (SEGMENTS + 1) * 3);
@@ -294,7 +296,7 @@ class Plane {
 
 async function main() {
   const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setPixelRatio(Math.min(devicePixelRatio, COARSE ? 1.5 : 2));
   renderer.setSize(innerWidth, innerHeight);
   document.body.prepend(renderer.domElement);
 
@@ -372,20 +374,25 @@ async function main() {
     plane.place(lat, lon, (Math.max(heightAt(lat, lon), 0) + 100000) * uniforms.uExag.value, 0);
   };
 
+  const setExag = (v) => {
+    // Rescale our altitude too, so the real (unexaggerated) altitude stays put.
+    const e0 = uniforms.uExag.value, e1 = THREE.MathUtils.clamp(v, 1, 20);
+    plane.pos.setLength(R + ((plane.pos.length() - R) * e1) / e0);
+    uniforms.uExag.value = e1;
+    $('exagbtn').textContent = `×${e1}`;
+  };
+  const EXAG_STEPS = [1, 2, 3, 5, 8];
+  $('exagbtn').onclick = () => setExag(EXAG_STEPS.find((s) => s > uniforms.uExag.value) ?? 1);
+
   const keys = new Set();
   let invert = false, paused = false;
   addEventListener('keydown', (e) => {
     keys.add(e.code);
-    if (e.code === 'BracketRight' || e.code === 'BracketLeft') {
-      // Rescale our altitude too, so the real (unexaggerated) altitude stays put.
-      const e0 = uniforms.uExag.value;
-      const e1 = THREE.MathUtils.clamp(e0 + (e.code === 'BracketRight' ? 1 : -1), 1, 20);
-      const alt = plane.pos.length() - R;
-      plane.pos.setLength(R + (alt * e1) / e0);
-      uniforms.uExag.value = e1;
-    }
+    if (e.code === 'BracketRight') setExag(uniforms.uExag.value + 1);
+    if (e.code === 'BracketLeft') setExag(uniforms.uExag.value - 1);
     if (e.code === 'KeyT') uniforms.uDetail.value = 1 - uniforms.uDetail.value;
-    if (e.code === 'KeyI') invert = !invert;
+    if (e.code === 'KeyI') { invert = !invert; $('invbtn').classList.toggle('on', invert); }
+    if (e.code === 'Escape') showAbout(about.hidden);
     if (e.code === 'KeyP') paused = !paused;
     if (e.code === 'KeyH') $('help').style.display = $('help').style.display === 'none' ? '' : 'none';
     if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
@@ -396,6 +403,51 @@ async function main() {
     plane.throttle = THREE.MathUtils.clamp(plane.throttle - Math.sign(e.deltaY) * 0.1, 1, 5);
   }, { passive: true });
 
+  // Pointer flying: drag to use a virtual stick (mouse anywhere; touch on the left half),
+  // and on touch, drag the right half up/down for throttle.
+  const stick = { x: 0, y: 0, id: null, ox: 0, oy: 0, r: 1 };
+  let throttleDrag = null;
+  const canvas = renderer.domElement;
+  const ring = $('stick'), knob = $('knob');
+  canvas.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    const touch = e.pointerType !== 'mouse';
+    if (touch && e.clientX > innerWidth / 2) {
+      if (throttleDrag === null) throttleDrag = { id: e.pointerId, y: e.clientY, t: plane.throttle };
+    } else if (stick.id === null) {
+      Object.assign(stick, { id: e.pointerId, ox: e.clientX, oy: e.clientY, r: touch ? 60 : 110 });
+      ring.style.cssText = `display:block;left:${e.clientX}px;top:${e.clientY}px;width:${2 * stick.r}px;height:${2 * stick.r}px`;
+      knob.style.transform = 'translate(-50%, -50%)';
+    } else return;
+    canvas.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (e.pointerId === stick.id) {
+      let dx = (e.clientX - stick.ox) / stick.r, dy = (e.clientY - stick.oy) / stick.r;
+      const len = Math.hypot(dx, dy);
+      if (len > 1) { dx /= len; dy /= len; }
+      stick.x = dx; stick.y = dy;
+      knob.style.transform = `translate(calc(-50% + ${dx * stick.r}px), calc(-50% + ${dy * stick.r}px))`;
+    } else if (throttleDrag && e.pointerId === throttleDrag.id) {
+      plane.throttle = THREE.MathUtils.clamp(throttleDrag.t + (throttleDrag.y - e.clientY) / 150, 1, 5);
+    }
+  });
+  const release = (e) => {
+    if (e.pointerId === stick.id) { Object.assign(stick, { x: 0, y: 0, id: null }); ring.style.display = 'none'; }
+    if (throttleDrag && e.pointerId === throttleDrag.id) throttleDrag = null;
+  };
+  canvas.addEventListener('pointerup', release);
+  canvas.addEventListener('pointercancel', release);
+
+  // About panel: shown on first load; flight is paused while it's open.
+  const about = $('about');
+  const showAbout = (open) => { about.hidden = !open; };
+  $('aboutbtn').onclick = () => showAbout(true);
+  $('fly').onclick = () => showAbout(false);
+  $('invbtn').onclick = () => { invert = !invert; $('invbtn').classList.toggle('on', invert); };
+  if (COARSE) document.body.classList.add('touch');
+
   $('loading').remove();
 
   let last = performance.now(), hudT = 0, warnT = 0, hashT = 1;
@@ -404,8 +456,11 @@ async function main() {
 
   function step(dt) {
     const k = (c) => (keys.has(c) ? 1 : 0);
-    const pitchIn = (k('KeyS') + k('ArrowDown') - k('KeyW') - k('ArrowUp')) * (invert ? -1 : 1);
-    const rollIn = k('KeyD') + k('ArrowRight') - k('KeyA') - k('ArrowLeft');
+    // Squared stick response gives fine control near centre. Drag down = pull back = nose up.
+    const sq = (v) => v * Math.abs(v);
+    const clamp1 = (v) => Math.max(-1, Math.min(1, v));
+    const pitchIn = clamp1(k('KeyS') + k('ArrowDown') - k('KeyW') - k('ArrowUp') + sq(stick.y)) * (invert ? -1 : 1);
+    const rollIn = clamp1(k('KeyD') + k('ArrowRight') - k('KeyA') - k('ArrowLeft') + sq(stick.x));
     const yawIn = k('KeyE') - k('KeyQ');
     if (keys.has('ShiftLeft') || keys.has('ShiftRight')) plane.throttle = Math.min(plane.throttle + dt * 0.6, 5);
     if (keys.has('ControlLeft') || keys.has('ControlRight')) plane.throttle = Math.max(plane.throttle - dt * 0.6, 1);
@@ -503,6 +558,8 @@ async function main() {
     const v = plane.speed;
     $('spd').textContent = v >= 1000 ? `${(v / 1000).toFixed(1)} km/s` : `${Math.round(v)} m/s`;
     $('exag').textContent = `×${exag}`;
+    $('thrfill').style.height = `${((plane.throttle - 1) / 4) * 100}%`;
+    $('thrlabel').textContent = $('spd').textContent;
 
     let best = null, bestD = Infinity;
     for (const p of PLACES) {
@@ -519,7 +576,7 @@ async function main() {
   function loop(now) {
     const dt = Math.min((now - last) / 1000, 0.1);
     last = now;
-    if (!paused) step(dt);
+    if (!paused && about.hidden) step(dt);
     const state = render();
     warnT -= dt;
     $('warn').style.display = warnT > 0 ? 'block' : 'none';

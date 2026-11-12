@@ -22,15 +22,20 @@ It needs to be served over HTTP (not opened as a file). Three.js loads from jsDe
 
 ## Fly
 
-| Keys | |
+| Input | |
 |---|---|
+| Mouse drag | virtual stick (drag down = nose up) |
+| Mouse wheel | throttle (10 m/s – 100 km/s) |
 | W/S or ↑/↓ | pitch (W = nose down) |
 | A/D or ←/→ | roll (banking also turns you) |
 | Q/E | yaw |
-| Shift / Ctrl, mouse wheel | throttle (10 m/s – 100 km/s) |
+| Shift / Ctrl | throttle |
 | `[` / `]` | vertical exaggeration (default ×3) |
 | T | toggle synthetic close-range detail |
-| I / P / H | invert pitch / pause / hide help |
+| I / P / H / Esc | invert pitch / pause / hide help / about |
+
+On phones and tablets, drag your left thumb to steer and your right thumb up/down for
+throttle. Buttons at the top right cycle exaggeration and invert pitch.
 
 Use the "Fly to…" menu or click the minimap to teleport. The URL hash holds your
 position (`#lat,lon,alt_km,heading,pitch`), so you can bookmark or share a view.
